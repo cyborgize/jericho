@@ -13,3 +13,9 @@ Library jericho
   Modules:         Jericho
   BuildTools:      ocamlbuild
   BuildDepends:    devkit, extlib, yojson, threads, lwt.unix, lwt.preemptive, lwt.ppx, curl.lwt
+
+Executable test
+  Path: .
+  MainIs: test.ml
+  CompiledObject: best
+  BuildDepends: jericho, devkit, extlib, yojson, lwt.preemptive, lwt.ppx
