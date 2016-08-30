@@ -1,0 +1,13 @@
+# OASIS_START
+# DO NOT EDIT (digest: a9678bab86a2f8602e77cf3f2f4e8105)
+version = "1.0"
+description = "API wrapper for Firebase Realtime Database"
+requires =
+"devkit extlib yojson threads lwt.unix lwt.preemptive lwt.ppx curl.lwt"
+archive(byte) = "jericho.cma"
+archive(byte, plugin) = "jericho.cma"
+archive(native) = "jericho.cmxa"
+archive(native, plugin) = "jericho.cmxs"
+exists_if = "jericho.cma"
+# OASIS_STOP
+

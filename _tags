@@ -1,0 +1,28 @@
+# OASIS_START
+# DO NOT EDIT (digest: 8ecd18ab597c62684f3962c5de037760)
+# Ignore VCS directories, you can use the same kind of rule outside
+# OASIS_START/STOP if you want to exclude directories that contains
+# useless stuff for the build process
+true: annot, bin_annot
+<**/.svn>: -traverse
+<**/.svn>: not_hygienic
+".bzr": -traverse
+".bzr": not_hygienic
+".hg": -traverse
+".hg": not_hygienic
+".git": -traverse
+".git": not_hygienic
+"_darcs": -traverse
+"_darcs": not_hygienic
+# Library jericho
+"jericho.cmxs": use_jericho
+<*.ml{,i,y}>: package(curl.lwt)
+<*.ml{,i,y}>: package(devkit)
+<*.ml{,i,y}>: package(extlib)
+<*.ml{,i,y}>: package(lwt.ppx)
+<*.ml{,i,y}>: package(lwt.preemptive)
+<*.ml{,i,y}>: package(lwt.unix)
+<*.ml{,i,y}>: package(threads)
+<*.ml{,i,y}>: package(yojson)
+# OASIS_STOP
+true: thread, package(threads)

@@ -1,0 +1,7 @@
+_build
+setup.data
+setup.log
+.*.sw[a-z]
+.sw[a-z]
+*.native
+*.byte

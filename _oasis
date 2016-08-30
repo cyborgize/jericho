@@ -1,0 +1,15 @@
+OASISFormat: 0.4
+Name:        jericho
+Version:     1.0
+Synopsis:    API wrapper for Firebase Realtime Database
+Authors:     Raman Varabets
+License:     MIT
+Plugins:     DevFiles (0.4), META (0.4)
+BuildTools:  ocamlbuild
+OCamlVersion: >= 4.02.3
+
+Library jericho
+  Path:            .
+  Modules:         Jericho
+  BuildTools:      ocamlbuild
+  BuildDepends:    devkit, extlib, yojson, threads, lwt.unix, lwt.preemptive, lwt.ppx, curl.lwt
