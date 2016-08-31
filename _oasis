@@ -11,11 +11,11 @@ OCamlVersion: >= 4.02.3
 Library jericho
   Path:            .
   Modules:         Jericho
-  BuildTools:      ocamlbuild
   BuildDepends:    devkit, extlib, yojson, threads, lwt.unix, lwt.preemptive, lwt.ppx, curl.lwt
 
 Executable test
   Path: .
   MainIs: test.ml
+  Install: false
   CompiledObject: best
   BuildDepends: jericho, devkit, extlib, yojson, lwt.preemptive, lwt.ppx

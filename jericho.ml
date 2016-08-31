@@ -4,9 +4,7 @@ open Printf
 
 let log = Log.from "jericho"
 
-module ServerValues = struct
-  let timestamp = `Assoc [ ".sv", `String "timestamp"; ]
-end
+let server_timestamp = `Assoc [ ".sv", `String "timestamp"; ]
 
 let priority x = ".priority", `Float x
 
