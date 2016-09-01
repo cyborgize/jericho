@@ -155,7 +155,7 @@ let event_stream url =
 let make ~auth base_url =
   let log_error ?exn action path error = log #error ?exn "%s %s : %s" (Web.string_of_http_action action) path error in
   let query action ?(args=[]) ?print path data =
-    let body = match data with Some data -> Some ("application/json", Yojson.to_string data) | None -> None in
+    let body = match data with Some data -> Some ("application/json", Yojson.Safe.to_string data) | None -> None in
     let args = ("auth", Some auth) :: ("print", Option.map string_of_print print) :: args in
     let args = List.filter_map (function (k, Some v) -> Some (k, v) | _ -> None) args in
     let url = sprintf "%s%s.json?%s" base_url path (Web.make_url_args args) in

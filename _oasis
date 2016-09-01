@@ -6,16 +6,16 @@ Authors:     Raman Varabets
 License:     MIT
 Plugins:     DevFiles (0.4), META (0.4)
 BuildTools:  ocamlbuild
+BuildDepends: devkit, extlib, yojson, threads, lwt.unix, lwt.preemptive, lwt.ppx, curl.lwt
 OCamlVersion: >= 4.02.3
 
 Library jericho
   Path:            .
   Modules:         Jericho
-  BuildDepends:    devkit, extlib, yojson, threads, lwt.unix, lwt.preemptive, lwt.ppx, curl.lwt
 
-Executable test
+Executable client
   Path: .
-  MainIs: test.ml
+  MainIs: client.ml
   Install: false
   CompiledObject: best
-  BuildDepends: jericho, devkit, extlib, yojson, lwt.preemptive, lwt.ppx
+  BuildDepends: jericho

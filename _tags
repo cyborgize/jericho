@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: e9802d1cabf41aa3434af1304f299e12)
+# DO NOT EDIT (digest: ffceba4d55e338c7c229da4e39c8396b)
 # Ignore VCS directories, you can use the same kind of rule outside
 # OASIS_START/STOP if you want to exclude directories that contains
 # useless stuff for the build process
@@ -16,16 +16,16 @@ true: annot, bin_annot
 "_darcs": not_hygienic
 # Library jericho
 "jericho.cmxs": use_jericho
-# Executable test
-<test.{native,byte}>: package(curl.lwt)
-<test.{native,byte}>: package(devkit)
-<test.{native,byte}>: package(extlib)
-<test.{native,byte}>: package(lwt.ppx)
-<test.{native,byte}>: package(lwt.preemptive)
-<test.{native,byte}>: package(lwt.unix)
-<test.{native,byte}>: package(threads)
-<test.{native,byte}>: package(yojson)
-<test.{native,byte}>: use_jericho
+# Executable client
+<client.{native,byte}>: package(curl.lwt)
+<client.{native,byte}>: package(devkit)
+<client.{native,byte}>: package(extlib)
+<client.{native,byte}>: package(lwt.ppx)
+<client.{native,byte}>: package(lwt.preemptive)
+<client.{native,byte}>: package(lwt.unix)
+<client.{native,byte}>: package(threads)
+<client.{native,byte}>: package(yojson)
+<client.{native,byte}>: use_jericho
 <*.ml{,i,y}>: package(curl.lwt)
 <*.ml{,i,y}>: package(devkit)
 <*.ml{,i,y}>: package(extlib)
