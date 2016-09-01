@@ -29,8 +29,8 @@ let event_stream url =
     | `Http code -> sprintf "http : %d" code
   in
   let (chunks, push) = Lwt_stream.create () in
-  let curl () =
-    let rec curl url =
+  let rec curl () =
+    let rec loop url =
       try%lwt
         let headers = ref [] in
         Web.Http_lwt.with_curl_cache begin fun h ->
@@ -60,7 +60,7 @@ let event_stream url =
             | code when code / 100 = 3 ->
               let%lwt url = Lwt.wrap2 List.assoc "location" !headers in
               log #info "http %d location %s" code url;
-              curl url
+              loop url
             | code -> Lwt.return (`Error (sprintf "http: %d" code))
             end
           | Curl.CURLE_WRITE_ERROR ->
@@ -75,8 +75,8 @@ let event_stream url =
       with exn ->
         Exn_lwt.fail ~exn "http_get_io_lwt (%s)" (inner_error_msg ())
     in
-    match%lwt curl url with
-    | `Ok -> log #info "ok"; Lwt.return_unit
+    match%lwt loop url with
+    | `Ok -> log #info "ok"; curl ()
     | `Error error -> log #error "error %s" error; Lwt.return_unit
   in
   let rec read buf written ofs size =
