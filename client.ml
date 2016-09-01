@@ -2,7 +2,7 @@ open Prelude
 open ExtLib
 open Printf
 
-let log = Log.from "test"
+let log = Log.from "client"
 
 let () =
   let auth = ref None in
@@ -10,8 +10,7 @@ let () =
   let action = ref None in
   let set_action x = action := Some x in
   let args =
-    let open ExtArg in
-    [
+    let open ExtArg in [
       may_str "auth" auth " authentication token (required)";
       may_str "base-url" base_url " firebase realtime database base url (required)";
       "-get", String (fun k -> set_action (`Get k)), "<key> get the value at the specified key";
