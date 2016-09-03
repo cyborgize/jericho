@@ -2,6 +2,8 @@ open Prelude
 open ExtLib
 open Printf
 
+module J = Yojson.Safe
+
 let log = Log.from "client"
 
 let () =
@@ -33,19 +35,19 @@ let () =
     | `Get k ->
       let%lwt result = jericho #get k in
       begin match result with
-      | `Ok v -> log #info "get %s = %s" k v
-      | `Error error -> log #error "get %s : %s" k error
+      | Some v -> log #info "get %s = %s" k (J.to_string v)
+      | None -> log #error "get %s : error" k
       end;
       Lwt.return_unit
     | `Set (k, v) ->
-      let%lwt result = jericho #set k (Yojson.Safe.from_string v) in
+      let%lwt result = jericho #set k (J.from_string v) in
       begin match result with
       | true -> log #info "set %s = %s" k v
       | false -> log #info "set %s : error" k
       end;
       Lwt.return_unit
     | `Push (k, v) ->
-      let%lwt result = jericho #push k (Yojson.Safe.from_string v) in
+      let%lwt result = jericho #push k (J.from_string v) in
       begin match result with
       | Some s -> log #info "push %s %s = %s" k s v
       | None -> log #info "push %s : error" k
@@ -55,8 +57,8 @@ let () =
     let stream = jericho #event_stream "/" in
     let%lwt () =
       Lwt_stream.iter begin function
-        | `Put (k, v) -> log #info "put %s %s" k (Yojson.Safe.to_string v)
-        | `Patch (k, v) -> log #info "patch %s %s" k (Yojson.Safe.to_string v)
+        | `Put (k, v) -> log #info "put %s %s" k (J.to_string v)
+        | `Patch (k, v) -> log #info "patch %s %s" k (J.to_string v)
         | `KeepAlive -> log #debug "keep-alive"
         | `Cancel -> log #warn "cancel"
         | `AuthRevoked -> log #warn "auth revoked"
