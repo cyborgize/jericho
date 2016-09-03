@@ -2,6 +2,8 @@ open Prelude
 open ExtLib
 open Printf
 
+module J = Yojson.Safe
+
 let log = Log.from "jericho"
 
 let server_timestamp = `Assoc [ ".sv", `String "timestamp"; ]
@@ -117,7 +119,7 @@ let event_stream url =
   let get_kv data =
     let s = string_of_data data in
     let error ?exn s = log #error ?exn "get_kv %s" s; "", `Null in
-    match Yojson.Safe.from_string s with
+    match J.from_string s with
     | `Assoc [ "path", `String k; "data", v; ]
     | `Assoc [ "data", v; "path", `String k; ] -> k, v
     | _ -> error s
@@ -156,17 +158,17 @@ let event_stream url =
     process_line zero
   end
 
-type event = [ `AuthRevoked | `Cancel | `KeepAlive | `Patch of string * Yojson.Safe.json | `Put of string * Yojson.Safe.json ]
+type event = [ `AuthRevoked | `Cancel | `KeepAlive | `Patch of string * J.json | `Put of string * J.json ]
 
 type t = <
   get : ?shallow:bool -> ?export:bool -> ?order_by:order ->
     ?start_at:string -> ?end_at:string -> ?equal_to:string ->
     ?limit_to_first:int -> ?limit_to_last:int -> ?print:print ->
-    string -> Yojson.Safe.json option Lwt.t;
-  set : ?pretty:bool -> string -> Yojson.Safe.json -> bool Lwt.t;
-  update : ?pretty:bool -> string -> Yojson.Safe.json -> bool Lwt.t;
-  update_multi : string -> (string * Yojson.Safe.json) list -> bool Lwt.t;
-  push : string -> Yojson.Safe.json -> string option Lwt.t;
+    string -> J.json option Lwt.t;
+  set : ?pretty:bool -> string -> J.json -> bool Lwt.t;
+  update : ?pretty:bool -> string -> J.json -> bool Lwt.t;
+  update_multi : string -> (string * J.json) list -> bool Lwt.t;
+  push : string -> J.json -> string option Lwt.t;
   delete : string -> bool Lwt.t;
   event_stream : string -> event Lwt_stream.t
 >
@@ -181,8 +183,8 @@ let make ~auth base_url =
       | Some data ->
       let data =
         match pretty with
-        | true -> Yojson.Safe.pretty_to_string ~std:true data
-        | false -> Yojson.Safe.to_string ~std:true data
+        | true -> J.pretty_to_string ~std:true data
+        | false -> J.to_string ~std:true data
       in
       Some ("application/json", data)
     in
@@ -196,14 +198,15 @@ let make ~auth base_url =
     | `Ok _ -> Lwt.return_true
     | `Error error -> log_error action path error; Lwt.return_false
   in
+  let json_string s = J.to_string (`String s) in
   (object
     method get ?(shallow=false) ?(export=false) ?order_by ?start_at ?end_at ?equal_to ?limit_to_first ?limit_to_last ?print k =
       let args = [
         "shallow", (if shallow then Some "true" else None);
-        "orderBy", Option.map string_of_order order_by;
-        "startAt", start_at;
-        "endAt", end_at;
-        "equalTo", equal_to;
+        "orderBy", Option.map (json_string $ string_of_order) order_by;
+        "startAt", Option.map json_string start_at;
+        "endAt", Option.map json_string end_at;
+        "equalTo", Option.map json_string equal_to;
         "limitToFirst", Option.map string_of_int limit_to_first;
         "limitToLast", Option.map string_of_int limit_to_last;
         "format", (if export then Some "export" else None);
@@ -211,7 +214,7 @@ let make ~auth base_url =
       match%lwt query `GET ~args ?print k None with
       | `Error error -> log_error `GET k error; Lwt.return_none
       | `Ok s ->
-      match Yojson.Safe.from_string s with
+      match J.from_string s with
       | json -> Lwt.return_some json
       | exception exn -> invalid_response ~exn `POST k s
 
@@ -225,7 +228,7 @@ let make ~auth base_url =
       match%lwt query `POST k (Some v) with
       | `Error error -> log_error `POST k error; Lwt.return_none
       | `Ok s ->
-      match Yojson.Safe.from_string s with
+      match J.from_string s with
       | `Assoc [ "name", `String name; ] -> Lwt.return_some name
       | _ -> invalid_response `POST k s
       | exception exn -> invalid_response ~exn `POST k s
