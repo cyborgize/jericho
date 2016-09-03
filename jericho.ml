@@ -8,6 +8,10 @@ let server_timestamp = `Assoc [ ".sv", `String "timestamp"; ]
 
 let priority x = ".priority", `Float x
 
+type print = [ `Pretty | `Silent ]
+
+type order = [ `Key | `Value | `Priority | `Field of string ]
+
 let string_of_print = function
   | `Pretty -> "pretty"
   | `Silent -> "silent"
@@ -152,8 +156,24 @@ let event_stream url =
     process_line zero
   end
 
+type event = [ `AuthRevoked | `Cancel | `KeepAlive | `Patch of string * Yojson.Safe.json | `Put of string * Yojson.Safe.json ]
+
+type t = <
+  get : ?shallow:bool -> ?export:bool -> ?order_by:order ->
+    ?start_at:string -> ?end_at:string -> ?equal_to:string ->
+    ?limit_to_first:int -> ?limit_to_last:int -> ?print:print ->
+    string -> Yojson.Safe.json option Lwt.t;
+  set : ?pretty:bool -> string -> Yojson.Safe.json -> bool Lwt.t;
+  update : ?pretty:bool -> string -> Yojson.Safe.json -> bool Lwt.t;
+  update_multi : string -> (string * Yojson.Safe.json) list -> bool Lwt.t;
+  push : string -> Yojson.Safe.json -> string option Lwt.t;
+  delete : string -> bool Lwt.t;
+  event_stream : string -> event Lwt_stream.t
+>
+
 let make ~auth base_url =
   let log_error ?exn action path error = log #error ?exn "%s %s : %s" (Web.string_of_http_action action) path error in
+  let invalid_response ?exn action k s = log_error ?exn action k (sprintf "invalid response : %s" s); Lwt.return_none in
   let query action ?(pretty=false) ?(args=[]) ?print path data =
     let body =
       match data with
@@ -176,7 +196,7 @@ let make ~auth base_url =
     | `Ok _ -> Lwt.return_true
     | `Error error -> log_error action path error; Lwt.return_false
   in
-  object
+  (object
     method get ?(shallow=false) ?(export=false) ?order_by ?start_at ?end_at ?equal_to ?limit_to_first ?limit_to_last ?print k =
       let args = [
         "shallow", (if shallow then Some "true" else None);
@@ -188,7 +208,12 @@ let make ~auth base_url =
         "limitToLast", Option.map string_of_int limit_to_last;
         "format", (if export then Some "export" else None);
       ] in
-      query `GET ~args ?print k None
+      match%lwt query `GET ~args ?print k None with
+      | `Error error -> log_error `GET k error; Lwt.return_none
+      | `Ok s ->
+      match Yojson.Safe.from_string s with
+      | json -> Lwt.return_some json
+      | exception exn -> invalid_response ~exn `POST k s
 
     method set ?pretty k v = bool_query `PUT ?pretty k (Some v)
 
@@ -198,16 +223,14 @@ let make ~auth base_url =
 
     method push k v =
       match%lwt query `POST k (Some v) with
-      | `Ok s ->
-        let invalid_response ?exn () = log_error ?exn `POST k (sprintf "invalid response : %s" s); Lwt.return_none in
-        begin match Yojson.Safe.from_string s with
-        | `Assoc [ "name", `String name; ] -> Lwt.return_some name
-        | _ -> invalid_response ()
-        | exception exn -> invalid_response ~exn ()
-        end
       | `Error error -> log_error `POST k error; Lwt.return_none
+      | `Ok s ->
+      match Yojson.Safe.from_string s with
+      | `Assoc [ "name", `String name; ] -> Lwt.return_some name
+      | _ -> invalid_response `POST k s
+      | exception exn -> invalid_response ~exn `POST k s
 
     method delete k = bool_query `DELETE k None
 
     method event_stream k = event_stream (sprintf "%s%s.json?%s" base_url k (Web.make_url_args [ "auth", auth; ]))
-  end
+  end : t)
