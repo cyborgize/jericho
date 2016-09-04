@@ -183,8 +183,8 @@ let make ~auth base_url =
       | Some data ->
       let data =
         match pretty with
-        | true -> J.pretty_to_string ~std:true data
-        | false -> J.to_string ~std:true data
+        | true -> J.pretty_to_string data
+        | false -> J.to_string data
       in
       Some ("application/json", data)
     in
