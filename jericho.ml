@@ -1,10 +1,37 @@
-open Prelude
-open ExtLib
 open Printf
 
 module J = Yojson.Safe
 
-let log = Log.from "jericho"
+type log_severity = Debug | Info | Warn | Error
+
+type 'a log_print = ?exn:exn -> ('a, unit, string, unit) format4 -> 'a
+
+let log_level : log_severity option ref = ref None
+
+let log_from facility =
+  let print severity ?exn:_ (* FIXME *) fmt =
+    ksprintf begin fun message ->
+      match !log_level with
+      | Some log_severity when severity >= log_severity ->
+        let severity =
+          match severity with
+          | Debug -> "debug"
+          | Info -> "info"
+          | Warn -> "warn"
+          | Error -> "error"
+        in
+        fprintf stderr "[%s:%s] %s" facility severity message
+      | _ -> ()
+    end fmt
+  in
+  object
+    method debug : 'a. 'a log_print = print Debug
+    method info : 'a. 'a log_print = print Info
+    method warn : 'a. 'a log_print = print Warn
+    method error : 'a. 'a log_print = print Error
+  end
+
+let log = log_from "jericho"
 
 let server_timestamp = `Assoc [ ".sv", `String "timestamp"; ]
 
@@ -24,62 +51,70 @@ let string_of_order = function
   | `Priority -> "$priority"
   | `Field s -> s
 
+let curl_setup h ?(timeout=30) url =
+  let open Curl in
+  set_url h url;
+  set_nosignal h true;
+  set_connecttimeout h 30;
+  set_followlocation h false;
+  set_encoding h CURL_ENCODING_ANY;
+  set_timeout h timeout;
+  ()
+
+type http_action = [ `GET | `POST | `DELETE | `PUT | `PATCH ]
+
+let string_of_http_action = function
+  | `GET -> "GET"
+  | `POST -> "POST"
+  | `DELETE -> "DELETE"
+  | `PUT -> "PUT"
+  | `PATCH -> "PATCH"
+
+let make_url_args args =
+  let urlencode = Netencoding.Url.encode ~plus:true in
+  let args = (List.map (fun (k, v) -> k ^ "=" ^ urlencode v) args) in
+  String.concat "&" args
+
 let event_stream url =
-  let check h = Curl.get_httpcode h = 200 in
-  let inner_error = ref `None in
-  let error code = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
-  let inner_error_msg () =
-    match !inner_error with
-    | `None -> error Curl.CURLE_WRITE_ERROR
-    | `Write exn -> sprintf "write error : %s" @@ Exn.to_string exn
-    | `Http code -> sprintf "http : %d" code
-  in
   let (chunks, push) = Lwt_stream.create () in
   let rec curl () =
+    let h = Curl.init () in
     let rec loop url =
-      try%lwt
-        let headers = ref [] in
-        Web.Http_lwt.with_curl_cache begin fun h ->
-          Curl.set_url h url;
-          Web.curl_default_setup h;
-          Curl.set_timeout h 0;
-          Curl.set_httpheader h [ "Accept: text/event-stream"; ];
-          Curl.set_headerfunction h begin fun s ->
-            let (k, v) = try Stre.splitc s ':' with Not_found -> "", s in
-            tuck headers (String.lowercase k, String.strip v);
-            String.length s
-          end;
-          Curl.set_writefunction h begin fun s ->
-            try
-              match check h with
-              | true ->
-                let len = String.length s in
-                push (Some (Bytes.of_string s, ref 0, ref len));
-                len
-              | false -> inner_error := `Http (Curl.get_httpcode h); 0
-            with exn -> inner_error := `Write exn; 0
-          end;
-          match%lwt Curl_lwt.perform h with
-          | Curl.CURLE_OK ->
-            begin match Curl.get_httpcode h with
-            | 200 -> log #info "curl ok"; Lwt.return `Ok
-            | code when code / 100 = 3 ->
-              let%lwt url = Lwt.wrap2 List.assoc "location" !headers in
-              log #info "http %d location %s" code url;
-              loop url
-            | code -> Lwt.return (`Error (sprintf "http: %d" code))
-            end
-          | Curl.CURLE_WRITE_ERROR ->
-            let msg = inner_error_msg () in
-            log #error "curl write error: %s" msg;
-            Lwt.return (`Error msg)
-          | code ->
-            let msg = error code in
-            log #error "curl error: %s" msg;
-            Lwt.return (`Error msg)
+      let headers = ref [] in
+      let header s =
+        let k, v =
+          match String.index s ':' with
+          | i -> String.sub s 0 i, String.sub s (i + 1) (String.length s - i - 1)
+          | exception Not_found -> "", s
+        in
+        headers := (String.lowercase k, String.trim v) :: !headers;
+        String.length s
+      in
+      let write s =
+        let len = String.length s in
+        push (Some (Bytes.of_string s, ref 0, ref len));
+        len
+      in
+      let open Curl in
+      reset h;
+      curl_setup h ~timeout:0 url;
+      set_httpheader h [ "Accept: text/event-stream"; ];
+      set_headerfunction h header;
+      set_writefunction h write;
+      match%lwt Curl_lwt.perform h with
+      | CURLE_OK ->
+        begin match get_httpcode h with
+        | 200 -> log #info "curl ok"; Lwt.return `Ok
+        | code when code / 100 = 3 ->
+          let%lwt url = Lwt.wrap2 List.assoc "location" !headers in
+          if !log_level = Some Debug then log #debug "http %d location %s" code url;
+          loop url
+        | code -> Lwt.return (`Error (sprintf "http: %d" code))
         end
-      with exn ->
-        Exn_lwt.fail ~exn "http_get_io_lwt (%s)" (inner_error_msg ())
+      | code ->
+        let msg = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
+        log #error "curl error: %s" msg;
+        Lwt.return (`Error msg)
     in
     match%lwt loop url with
     | `Ok -> log #info "ok"; curl ()
@@ -134,7 +169,7 @@ let event_stream url =
       | None -> Lwt.return_none
       | Some "" -> dispatch_event e
       | Some s when s.[0] = ':' ->
-        if log #level = `Debug then log #debug "stream comment %s" s;
+        if !log_level = Some Debug then log #debug "stream comment %s" s;
         process_line e
       | Some s ->
       match String.index s ':' with
@@ -173,25 +208,55 @@ type t = <
   event_stream : string -> event Lwt_stream.t
 >
 
+let option_map f x = match x with Some x -> Some (f x) | None -> None
+
 let make ~auth base_url =
-  let log_error ?exn action path error = log #error ?exn "%s %s : %s" (Web.string_of_http_action action) path error in
+  let log_error ?exn action path error = log #error ?exn "%s %s : %s" (string_of_http_action action) path error in
   let invalid_response ?exn action k s = log_error ?exn action k (sprintf "invalid response : %s" s); Lwt.return_none in
   let query action ?(pretty=false) ?(args=[]) ?print path data =
     let body =
       match data with
       | None -> None
       | Some data ->
-      let data =
-        match pretty with
-        | true -> J.pretty_to_string data
-        | false -> J.to_string data
-      in
-      Some ("application/json", data)
+      match pretty with
+      | true -> Some (J.pretty_to_string data)
+      | false -> Some (J.to_string data)
     in
-    let args = ("auth", Some auth) :: ("print", Option.map string_of_print print) :: args in
-    let args = List.filter_map (function (k, Some v) -> Some (k, v) | _ -> None) args in
-    let url = sprintf "%s%s.json?%s" base_url path (Web.make_url_args args) in
-    Web.http_query_lwt ~verbose:(log #level = `Debug) ?body action url
+    let args = ("auth", Some auth) :: ("print", option_map string_of_print print) :: args in
+    let args =
+      List.filter (function (k, Some v) -> true | _ -> false) args |>
+      List.map (function (k, Some v) -> k, v | _ -> assert false)
+    in
+    let url = sprintf "%s%s.json?%s" base_url path (make_url_args args) in
+    let open Curl in
+    let h = init () in
+    curl_setup h url;
+    begin match action with
+    | `GET -> ()
+    | `DELETE -> set_customrequest h "DELETE"
+    | `POST -> set_post h true
+    | `PUT -> set_post h true; set_customrequest h "PUT"
+    | `PATCH -> set_post h true; set_customrequest h "PATCH"
+    end;
+    begin match body with
+    | None -> ()
+    | Some body ->
+      set_httpheader h [ "Content-Type: application/json"; ];
+      set_postfields h body;
+      set_postfieldsize h (String.length body)
+    end;
+    let b = Buffer.create 10 in
+    set_writefunction h (fun s -> Buffer.add_string b s; String.length s);
+    match%lwt Curl_lwt.perform h with
+    | CURLE_OK ->
+      begin match get_httpcode h with
+      | 200 -> log #info "curl ok"; Lwt.return (`Ok (Buffer.contents b))
+      | code -> Lwt.return (`Error (sprintf "http: %d" code))
+      end
+    | code ->
+      let msg = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
+      log #error "curl error: %s" msg;
+      Lwt.return (`Error msg)
   in
   let bool_query action ?pretty path data =
     match%lwt query action ?pretty ~print:`Silent path data with
@@ -203,12 +268,12 @@ let make ~auth base_url =
     method get ?(shallow=false) ?(export=false) ?order_by ?start_at ?end_at ?equal_to ?limit_to_first ?limit_to_last ?print k =
       let args = [
         "shallow", (if shallow then Some "true" else None);
-        "orderBy", Option.map (json_string $ string_of_order) order_by;
-        "startAt", Option.map json_string start_at;
-        "endAt", Option.map json_string end_at;
-        "equalTo", Option.map json_string equal_to;
-        "limitToFirst", Option.map string_of_int limit_to_first;
-        "limitToLast", Option.map string_of_int limit_to_last;
+        "orderBy", option_map (fun x -> json_string (string_of_order x)) order_by;
+        "startAt", option_map json_string start_at;
+        "endAt", option_map json_string end_at;
+        "equalTo", option_map json_string equal_to;
+        "limitToFirst", option_map string_of_int limit_to_first;
+        "limitToLast", option_map string_of_int limit_to_last;
         "format", (if export then Some "export" else None);
       ] in
       match%lwt query `GET ~args ?print k None with
@@ -235,5 +300,5 @@ let make ~auth base_url =
 
     method delete k = bool_query `DELETE k None
 
-    method event_stream k = event_stream (sprintf "%s%s.json?%s" base_url k (Web.make_url_args [ "auth", auth; ]))
+    method event_stream k = event_stream (sprintf "%s%s.json?%s" base_url k (make_url_args [ "auth", auth; ]))
   end : t)
