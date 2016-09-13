@@ -55,7 +55,7 @@ let () =
       end;
       Lwt.return_unit
     | `Stream k ->
-    let stream = jericho #event_stream "/" in
+    let stream = jericho #event_stream k in
     let%lwt () =
       Lwt_stream.iter begin function
         | `Put (k, v) -> log #info "put %s %s" k (J.to_string v)
