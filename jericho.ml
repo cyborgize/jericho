@@ -105,12 +105,16 @@ let event_stream url =
       match%lwt Curl_lwt.perform h with
       | CURLE_OK ->
         begin match get_httpcode h with
-        | 200 -> log #info "curl ok"; Lwt.return `Ok
+        | code when code / 100 = 2 ->
+          if !log_level = Some Debug then log #debug "http %d" code;
+          Lwt.return `Ok
         | code when code / 100 = 3 ->
           let%lwt url = Lwt.wrap2 List.assoc "location" !headers in
-          if !log_level = Some Debug then log #debug "http %d location %s" code url;
+          log #info "http %d location %s" code url;
           loop url
-        | code -> Lwt.return (`Error (sprintf "http: %d" code))
+        | code ->
+          log #error "http %d" code;
+          Lwt.return (`Error (sprintf "http: %d" code))
         end
       | code ->
         let msg = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
@@ -251,8 +255,12 @@ let make ~auth base_url =
     match%lwt Curl_lwt.perform h with
     | CURLE_OK ->
       begin match get_httpcode h with
-      | 200 -> log #info "curl ok"; Lwt.return (`Ok (Buffer.contents b))
-      | code -> Lwt.return (`Error (sprintf "http: %d" code))
+      | code when code / 100 = 2 ->
+        if !log_level = Some Debug then log #debug "http %d" code;
+        Lwt.return (`Ok (Buffer.contents b))
+      | code ->
+        log #error "http %d" code;
+        Lwt.return (`Error (sprintf "http: %d" code))
       end
     | code ->
       let msg = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
