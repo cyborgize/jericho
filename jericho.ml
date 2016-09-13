@@ -20,7 +20,8 @@ let log_from facility =
           | Warn -> "warn"
           | Error -> "error"
         in
-        fprintf stderr "[%s:%s] %s" facility severity message
+        fprintf stderr "[%s:%s] %s\n" facility severity message;
+        flush stderr
       | _ -> ()
     end fmt
   in
