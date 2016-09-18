@@ -121,9 +121,10 @@ let event_stream url =
         log #error "curl error: %s" msg;
         Lwt.return (`Error msg)
     in
-    match%lwt loop url with
+    begin match%lwt loop url with
     | `Ok -> log #info "ok"; curl ()
     | `Error error -> log #error "error %s" error; Lwt.return_unit
+    end [%finally Curl.cleanup h; Lwt.return_unit; ]
   in
   let rec read buf written ofs size =
     match size with
@@ -252,20 +253,24 @@ let make ~auth base_url =
     end;
     let b = Buffer.create 10 in
     set_writefunction h (fun s -> Buffer.add_string b s; String.length s);
-    match%lwt Curl_lwt.perform h with
-    | CURLE_OK ->
-      begin match get_httpcode h with
-      | code when code / 100 = 2 ->
-        if !log_level = Some Debug then log #debug "http %d" code;
-        Lwt.return (`Ok (Buffer.contents b))
+    let%lwt result =
+      match%lwt Curl_lwt.perform h with
+      | CURLE_OK ->
+        begin match get_httpcode h with
+        | code when code / 100 = 2 ->
+          if !log_level = Some Debug then log #debug "http %d" code;
+          Lwt.return (`Ok (Buffer.contents b))
+        | code ->
+          log #error "http %d" code;
+          Lwt.return (`Error (sprintf "http: %d" code))
+        end
       | code ->
-        log #error "http %d" code;
-        Lwt.return (`Error (sprintf "http: %d" code))
-      end
-    | code ->
-      let msg = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
-      log #error "curl error: %s" msg;
-      Lwt.return (`Error msg)
+        let msg = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
+        log #error "curl error: %s" msg;
+        Lwt.return (`Error msg)
+    in
+    Curl.cleanup h;
+    Lwt.return result
   in
   let bool_query action ?pretty path data =
     match%lwt query action ?pretty ~print:`Silent path data with
