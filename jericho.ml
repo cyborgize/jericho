@@ -253,6 +253,7 @@ let make ~auth base_url =
     end;
     let b = Buffer.create 10 in
     set_writefunction h (fun s -> Buffer.add_string b s; String.length s);
+    log #info "%s %s%s" (string_of_http_action action) path (match body with Some body -> sprintf " : %s" body | None -> "");
     let%lwt result =
       match%lwt Curl_lwt.perform h with
       | CURLE_OK ->
