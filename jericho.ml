@@ -261,6 +261,9 @@ let make ~auth base_url =
         | code when code / 100 = 2 ->
           if !log_level = Some Debug then log #debug "http %d" code;
           Lwt.return (`Ok (Buffer.contents b))
+        | code when !log_level = Some Debug ->
+          log #debug "http %d : %s" code (Buffer.contents b);
+          Lwt.return (`Error (sprintf "http: %d" code))
         | code ->
           log #error "http %d" code;
           Lwt.return (`Error (sprintf "http: %d" code))
