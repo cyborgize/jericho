@@ -78,7 +78,12 @@ let make_url_args args =
 
 let event_stream url =
   let (chunks, push) = Lwt_stream.create () in
-  let rec curl () =
+  let rec curl ?wait () =
+    let%lwt () =
+      match wait with
+      | None -> Lwt.return_unit
+      | Some wait -> log #info "wait for %.1fs" wait; Lwt_unix.sleep wait
+    in
     let h = Curl.init () in
     let rec loop url =
       let headers = ref [] in
@@ -123,7 +128,10 @@ let event_stream url =
     in
     begin match%lwt loop url with
     | `Ok -> log #info "ok"; curl ()
-    | `Error error -> log #error "error %s" error; Lwt.return_unit
+    | `Error error ->
+      log #error "error %s" error;
+      let wait = match wait with None -> 1.  | Some wait -> min (wait *. 1.3) 10. in
+      curl ~wait ()
     end [%finally Curl.cleanup h; Lwt.return_unit; ]
   in
   let rec read buf written ofs size =
