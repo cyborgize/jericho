@@ -34,25 +34,16 @@ let () =
     let jericho = Jericho.make ~auth base_url in
     match action with
     | `Get k ->
-      let%lwt result = jericho #get k in
-      begin match result with
-      | Some v -> log #info "get %s = %s" k (J.to_string v)
-      | None -> log #error "get %s : error" k
-      end;
+      let%lwt v = jericho #get k in
+      log #info "get %s = %s" k (J.to_string v);
       Lwt.return_unit
     | `Set (k, v) ->
-      let%lwt result = jericho #set k (J.from_string v) in
-      begin match result with
-      | true -> log #info "set %s = %s" k v
-      | false -> log #info "set %s : error" k
-      end;
+      let%lwt () = jericho #set k (J.from_string v) in
+      log #info "set %s" k;
       Lwt.return_unit
     | `Push (k, v) ->
-      let%lwt result = jericho #push k (J.from_string v) in
-      begin match result with
-      | Some s -> log #info "push %s %s = %s" k s v
-      | None -> log #info "push %s : error" k
-      end;
+      let%lwt name = jericho #push k (J.from_string v) in
+      log #info "push %s %s = %s" k name v;
       Lwt.return_unit
     | `Stream k ->
     let stream = jericho #event_stream k in

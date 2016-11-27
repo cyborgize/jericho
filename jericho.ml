@@ -213,20 +213,29 @@ type t = <
   get : ?shallow:bool -> ?export:bool -> ?order_by:order ->
     ?start_at:string -> ?end_at:string -> ?equal_to:string ->
     ?limit_to_first:int -> ?limit_to_last:int -> ?print:print ->
-    string -> J.json option Lwt.t;
-  set : ?pretty:bool -> string -> J.json -> bool Lwt.t;
-  update : ?pretty:bool -> string -> J.json -> bool Lwt.t;
-  update_multi : string -> (string * J.json) list -> bool Lwt.t;
-  push : string -> J.json -> string option Lwt.t;
-  delete : string -> bool Lwt.t;
+    string -> J.json Lwt.t;
+  set : ?pretty:bool -> string -> J.json -> unit Lwt.t;
+  update : ?pretty:bool -> string -> J.json -> unit Lwt.t;
+  update_multi : string -> (string * J.json) list -> unit Lwt.t;
+  push : string -> J.json -> string Lwt.t;
+  delete : string -> unit Lwt.t;
   event_stream : string -> event Lwt_stream.t
 >
+
+type error = [ `Curl of int * string | `HTTP of int * string | `Response of string ]
+
+let string_of_error = function
+  | `Curl (code, s) -> sprintf "curl %d : %s" code s
+  | `HTTP (code, s) -> sprintf "http %d : %s" code s
+  | `Response s -> sprintf "response : %s" s
+
+exception Error of error
 
 let option_map f x = match x with Some x -> Some (f x) | None -> None
 
 let make ~auth base_url =
   let log_error ?exn action path error = log #error ?exn "%s %s : %s" (string_of_http_action action) path error in
-  let invalid_response ?exn action k s = log_error ?exn action k (sprintf "invalid response : %s" s); Lwt.return_none in
+  let return_error ?exn action k error = log_error ?exn action k (string_of_error error); Lwt.fail (Error error) in
   let query action ?(pretty=false) ?(args=[]) ?print path data =
     let body =
       match data with
@@ -265,29 +274,24 @@ let make ~auth base_url =
     let%lwt result =
       match%lwt Curl_lwt.perform h with
       | CURLE_OK ->
-        begin match get_httpcode h with
-        | code when code / 100 = 2 ->
-          if !log_level = Some Debug then log #debug "http %d" code;
-          Lwt.return (`Ok (Buffer.contents b))
-        | code when !log_level = Some Debug ->
-          log #debug "http %d : %s" code (Buffer.contents b);
-          Lwt.return (`Error (sprintf "http: %d" code))
-        | code ->
-          log #error "http %d" code;
-          Lwt.return (`Error (sprintf "http: %d" code))
-        end
+        let code = get_httpcode h in
+        let s = Buffer.contents b in
+        log #info "http %d : %d bytes" code (String.length s);
+        if !log_level = Some Debug then log #debug "http %d : %s" code s;
+        Lwt.return (code, s)
       | code ->
-        let msg = sprintf "curl (%d) %s" (Curl.errno code) (Curl.strerror code) in
-        log #error "curl error: %s" msg;
-        Lwt.return (`Error msg)
+        let errno = Curl.errno code in
+        let error = Curl.strerror code in
+        log #error "curl (%d) %s" errno error;
+        Lwt.fail (Error (`Curl (errno, error)))
     in
     Curl.cleanup h;
     Lwt.return result
   in
-  let bool_query action ?pretty path data =
-    match%lwt query action ?pretty ~print:`Silent path data with
-    | `Ok _ -> Lwt.return_true
-    | `Error error -> log_error action path error; Lwt.return_false
+  let simple_query action ?pretty k v =
+    match%lwt query action ?pretty ~print:`Silent k v with
+    | 204, _ -> Lwt.return_unit
+    | code, s -> return_error action k (`HTTP (code, s))
   in
   let json_string s = J.to_string (`String s) in
   (object
@@ -303,28 +307,27 @@ let make ~auth base_url =
         "format", (if export then Some "export" else None);
       ] in
       match%lwt query `GET ~args ?print k None with
-      | `Error error -> log_error `GET k error; Lwt.return_none
-      | `Ok s ->
-      match J.from_string s with
-      | json -> Lwt.return_some json
-      | exception exn -> invalid_response ~exn `POST k s
+      | 200, s -> (try Lwt.return (J.from_string s) with exn -> return_error ~exn `GET k (`Response s))
+      | 204, "" -> Lwt.return `Null
+      | code, s -> return_error `GET k (`HTTP (code, s))
 
-    method set ?pretty k v = bool_query `PUT ?pretty k (Some v)
+    method set ?pretty k v = simple_query `PUT ?pretty k (Some v)
 
-    method update ?pretty k v = bool_query `PATCH ?pretty k (Some v)
+    method update ?pretty k v = simple_query `PATCH ?pretty k (Some v)
 
-    method update_multi k l = bool_query `PATCH k (Some (`Assoc l))
+    method update_multi k l = simple_query `PATCH k (Some (`Assoc l))
 
     method push k v =
       match%lwt query `POST k (Some v) with
-      | `Error error -> log_error `POST k error; Lwt.return_none
-      | `Ok s ->
-      match J.from_string s with
-      | `Assoc [ "name", `String name; ] -> Lwt.return_some name
-      | _ -> invalid_response `POST k s
-      | exception exn -> invalid_response ~exn `POST k s
+      | 200, s ->
+        begin match J.from_string s with
+        | exception exn -> return_error ~exn `POST k (`Response s)
+        | `Assoc [ "name", `String name; ] -> Lwt.return name
+        | _ -> return_error `POST k (`Response s)
+        end
+      | code, s -> return_error `POST k (`HTTP (code, s))
 
-    method delete k = bool_query `DELETE k None
+    method delete k = simple_query `DELETE k None
 
     method event_stream k = event_stream (sprintf "%s%s.json?%s" base_url k (make_url_args [ "auth", auth; ]))
   end : t)
