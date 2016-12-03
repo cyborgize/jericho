@@ -126,13 +126,19 @@ let event_stream url =
         log #error "curl error: %s" msg;
         Lwt.return (`Error msg)
     in
-    begin match%lwt loop url with
-    | `Ok -> log #info "ok"; curl ()
-    | `Error error ->
-      log #error "error %s" error;
-      let wait = match wait with None -> 1.  | Some wait -> min (wait *. 1.3) 10. in
-      curl ~wait ()
-    end [%finally Curl.cleanup h; Lwt.return_unit; ]
+    let%lwt wait =
+      begin match%lwt loop url with
+      | `Ok -> log #info "ok"; Lwt.return_none
+      | `Error error ->
+        log #error "error %s" error;
+        let wait = match wait with None -> 1.  | Some wait -> min (wait *. 1.3) 10. in
+        Lwt.return_some wait
+      end [%finally
+        Curl.cleanup h;
+        Lwt.return_unit;
+      ]
+    in
+    curl ?wait ()
   in
   let rec read buf written ofs size =
     match size with
