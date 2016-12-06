@@ -61,7 +61,7 @@ let curl_setup h ?(timeout=30) url =
   set_encoding h CURL_ENCODING_ANY;
   set_timeout h timeout;
   set_lowspeedlimit h 1;
-  set_lowspeedtime h 31;
+  set_lowspeedtime h 42;
   ()
 
 type http_action = [ `GET | `POST | `DELETE | `PUT | `PATCH ]
