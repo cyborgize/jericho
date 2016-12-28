@@ -52,11 +52,11 @@ let string_of_order = function
   | `Priority -> "$priority"
   | `Field s -> s
 
-let curl_setup h ?(timeout=30) url =
+let curl_setup h ?(connecttimeout=30) ?(timeout=30) url =
   let open Curl in
   set_url h url;
   set_nosignal h true;
-  set_connecttimeout h 5;
+  set_connecttimeout h 30;
   set_followlocation h false;
   set_encoding h CURL_ENCODING_ANY;
   set_timeout h timeout;
