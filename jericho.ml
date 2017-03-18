@@ -95,7 +95,7 @@ let event_stream url =
           | i -> String.sub s 0 i, String.sub s (i + 1) (String.length s - i - 1)
           | exception Not_found -> "", s
         in
-        headers := (String.lowercase k, String.trim v) :: !headers;
+        headers := (String.lowercase_ascii k, String.trim v) :: !headers;
         String.length s
       in
       let write s =
